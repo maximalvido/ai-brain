@@ -73,7 +73,7 @@ it does not collide with a typical local PostgreSQL installation.
 ### 2. Start the database and MCP services
 
 ```bash
-docker compose -f deploy/docker-compose.yml up -d
+docker compose up -d
 ```
 
 This starts PostgreSQL, the HTTP MCP server, and the stdio MCP service. The
@@ -83,7 +83,7 @@ server runs the checked-in migrations when it connects to the database. Set
 To start only the database and HTTP endpoint:
 
 ```bash
-docker compose -f deploy/docker-compose.yml up -d postgres http
+docker compose up -d postgres http
 ```
 
 ### 3. Build and test
@@ -137,7 +137,7 @@ server, bind the endpoint to an address reachable by the reverse proxy or
 private load balancer:
 
 ```bash
-docker compose -f deploy/docker-compose.yml up -d http
+docker compose up -d http
 ```
 
 The HTTP MCP endpoint is available at `http://localhost:8787/mcp` locally, or
@@ -221,7 +221,8 @@ machine. It is not the normal setup for employees using a shared server.
 
 ```text
 apps/brain-server/             CLI, stdio MCP, and HTTP MCP entry points
-Dockerfile                     Multi-stage image for the server services
+docker-compose.yml             PostgreSQL, HTTP MCP, and stdio MCP services
+deploy/Dockerfile               Multi-stage image for the server services
 crates/brain-domain/           Domain types and contracts
 crates/brain-connectors/       Connector abstractions
 crates/connector-linear/       Linear source connector
@@ -229,7 +230,7 @@ crates/brain-ingestion/        Observation ingestion
 crates/brain-compiler/         Canonical resource compilation
 crates/brain-storage/          Storage interfaces and query contracts
 crates/brain-storage-postgres/ PostgreSQL implementation
-deploy/                         Local infrastructure
+deploy/                         Deployment image and related infrastructure
 docs/                           Product, architecture, and ADR documentation
 migrations/                     SQL schema migrations
 ```

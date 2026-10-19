@@ -15,7 +15,6 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/brain-server /usr/local/bin/brain-server
-COPY migrations /app/migrations
 
 WORKDIR /app
 ENTRYPOINT ["brain-server"]

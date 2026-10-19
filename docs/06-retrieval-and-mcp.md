@@ -24,8 +24,8 @@ should not be required on employee machines in the shared-server model.
 
 ## Compose deployment
 
-The repository includes a multi-stage `Dockerfile` and
-`deploy/docker-compose.yml`. The Compose services are:
+The repository includes a multi-stage `deploy/Dockerfile` and root-level
+`docker-compose.yml`. The Compose services are:
 
 - `postgres`: PostgreSQL 16 with the persistent `ai-brain-postgres` volume;
 - `http`: HTTP MCP transport at `/mcp`, published on host port `8787` by
@@ -38,7 +38,7 @@ Start the full local stack with:
 ```bash
 cp .env.example .env
 # Set BRAIN_API_KEY in .env.
-docker compose -f deploy/docker-compose.yml up -d
+docker compose up -d
 ```
 
 Set `BRAIN_HTTP_BIND` and `BRAIN_HTTP_PORT` when the HTTP service must be

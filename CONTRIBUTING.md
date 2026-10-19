@@ -19,7 +19,7 @@ and architecture discussions.
 git clone <repository-url>
 cd ai-brain
 cp .env.example .env
-docker compose -f deploy/docker-compose.yml up -d
+docker compose up -d
 cargo build --workspace
 ```
 

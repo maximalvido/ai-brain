@@ -17,8 +17,8 @@ services:
 
   http:
     build:
-      context: ..
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: deploy/Dockerfile
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-ai_brain}:${POSTGRES_PASSWORD:-ai_brain_local}@postgres:5432/${POSTGRES_DB:-ai_brain}
       BRAIN_API_KEY: ${BRAIN_API_KEY:?BRAIN_API_KEY must be set}
@@ -32,11 +32,11 @@ services:
 
   mcp:
     build:
-      context: ..
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: deploy/Dockerfile
     command: ["mcp"]
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-ai_brain}:${POSTGRES_PASSWORD:-ai_brain_local}@postgres:5432/${POSTGRES_DB:-ai_brain}
+      DATABASE_URL: postgres://${POSTGRES_USER:-ai_brain}:${POSTGRES_PASSWORD:-ai_brain_local}@postgres:5432/ai_brain
       BRAIN_API_KEY: ${BRAIN_API_KEY:?BRAIN_API_KEY must be set}
     depends_on:
       postgres:
