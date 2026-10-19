@@ -23,18 +23,33 @@ alpha releases.
 - canonical resources and provenance-aware compilation;
 - PostgreSQL-backed full-text retrieval;
 - source references and freshness metadata;
-- an MCP `brain_search` tool for local AI clients;
-- a small HTTP MCP endpoint for trusted remote clients.
+- an MCP `brain_search` tool for connected AI clients;
+- an HTTP MCP endpoint intended to run once on a private company server.
 
-## Recommended repository name
+## Deployment model
 
-`sourcebound` is the strongest public-facing name: it communicates that answers
-are grounded in source material and leaves room for connectors beyond a single
-AI provider. Other options are `evidence-brain`, `company-context`, and
-`grounded-knowledge`.
+The intended deployment is one AI Brain server for one company. The server
+owns the PostgreSQL database, runs source synchronization, and exposes MCP
+over an internal HTTPS URL. Employees connect to that URL from an approved
+VPN; their AI clients do not need a local checkout or a local database.
 
-The working product name remains **AI Brain** until a repository rename is
-chosen.
+```text
+Linear / future sources
+          │
+          ▼
+  AI Brain server + PostgreSQL
+          │  HTTPS /mcp
+          ▼
+       Company VPN
+          │
+          ▼
+  Codex, Claude, or another MCP client
+```
+
+For production, place the HTTP endpoint behind a TLS reverse proxy or private
+load balancer, restrict network access to the VPN, and use a separate strong
+`BRAIN_API_KEY` for the installation. The built-in bearer key is suitable for
+the alpha deployment; per-user authentication and auditing are planned.
 
 ## Quick start
 
@@ -107,22 +122,67 @@ The MCP process needs access to the repository, `.env`, and PostgreSQL. If a
 client cannot set a working directory, launch it from this repository or use
 an absolute Cargo manifest path in that client’s configuration.
 
-### HTTP MCP
+### Shared server: HTTP MCP over the company VPN
 
-Start the HTTP endpoint:
+On the AI Brain server, bind the HTTP endpoint to an address reachable by the
+reverse proxy or private load balancer:
 
 ```bash
+export BRAIN_HTTP_ADDR=127.0.0.1:8787
 cargo run -p brain-server -- serve-http
 ```
 
-It listens at `http://127.0.0.1:8787/mcp` by default. Requests must include:
+Keep `127.0.0.1` when a reverse proxy runs on the same server. If the proxy is
+on another private host, bind to the server’s private interface instead. Do
+not bind to a public interface unless the host firewall and VPN policy protect
+the port.
+
+Publish the endpoint through a private DNS name, for example:
+
+```text
+https://ai-brain.example.internal/mcp
+```
+
+Every client request must include:
 
 ```http
 Authorization: Bearer <BRAIN_API_KEY>
 ```
 
-Do not expose this endpoint to an untrusted network without stronger
-authentication, TLS, and deployment-level access controls.
+#### Codex client setup
+
+Run this on the employee’s machine after joining the company VPN:
+
+```bash
+codex mcp add ai-brain \
+  --url https://ai-brain.example.internal/mcp \
+  --bearer-token-env-var BRAIN_API_KEY
+```
+
+Set `BRAIN_API_KEY` in the client environment, restart Codex, and verify that
+the `brain_search` tool is available. The employee does not need Rust, Cargo,
+PostgreSQL, or an AI Brain checkout for this URL-based setup.
+
+#### Other MCP clients
+
+Choose the client’s **remote HTTP/Streamable HTTP MCP** transport and enter:
+
+- URL: `https://ai-brain.example.internal/mcp`
+- Authorization: `Bearer <BRAIN_API_KEY>`
+
+Prefer an environment-variable or secret-store reference when the client
+supports one. Never put the bearer key in a committed client configuration.
+
+### Local stdio MCP
+
+Stdio remains useful for development, CI, or a single-user installation:
+
+```bash
+codex mcp add ai-brain -- cargo run -p brain-server -- mcp
+```
+
+This mode requires the repository checkout, `.env`, and PostgreSQL on the same
+machine. It is not the normal setup for employees using a shared server.
 
 ## Configuration
 
@@ -135,7 +195,7 @@ authentication, TLS, and deployment-level access controls.
 | `POSTGRES_PORT` | Host port mapped to PostgreSQL | `55432` |
 | `LINEAR_API_KEY` | Read-only Linear connector credential | unset |
 | `BRAIN_API_KEY` | Installation key for MCP and HTTP access | unset |
-| `BRAIN_HTTP_ADDR` | HTTP bind address | `127.0.0.1:8787` |
+| `BRAIN_HTTP_ADDR` | HTTP bind address on the shared server | `127.0.0.1:8787` |
 
 ## Repository layout
 

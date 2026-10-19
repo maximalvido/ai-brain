@@ -1,10 +1,26 @@
 # Retrieval and MCP
 
-Status: Proposed
+Status: Implemented in the alpha server for stdio and HTTP transports
 
 ## Purpose
 
 AI Brain exposes knowledge retrieval to MCP-compatible clients. It returns compact, structured, permission-filtered evidence. The client is responsible for turning that evidence into the final conversational response.
+
+## Deployment topology
+
+The primary deployment is one private AI Brain installation per company. The
+installation runs the source connectors, PostgreSQL, and the MCP HTTP endpoint
+on a server reachable through the company VPN. Employee AI clients connect to a
+private HTTPS URL such as `https://ai-brain.example.internal/mcp`.
+
+The HTTP endpoint authenticates requests with the installation-level
+`BRAIN_API_KEY` bearer token. Production deployments should add TLS, private
+DNS, VPN/network policy, secret management, rate limiting, and operational
+logging at the deployment boundary. The current alpha does not yet provide
+per-user identity or per-user API keys.
+
+Stdio MCP is retained for local development and single-user deployments. It
+should not be required on employee machines in the shared-server model.
 
 ## Query lifecycle
 
