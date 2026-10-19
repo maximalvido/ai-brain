@@ -22,6 +22,30 @@ per-user identity or per-user API keys.
 Stdio MCP is retained for local development and single-user deployments. It
 should not be required on employee machines in the shared-server model.
 
+## Compose deployment
+
+The repository includes a multi-stage `Dockerfile` and
+`deploy/docker-compose.yml`. The Compose services are:
+
+- `postgres`: PostgreSQL 16 with the persistent `ai-brain-postgres` volume;
+- `http`: HTTP MCP transport at `/mcp`, published on host port `8787` by
+  default and bound to `127.0.0.1`;
+- `mcp`: stdio MCP transport for an integration that can attach to a container
+  process.
+
+Start the full local stack with:
+
+```bash
+cp .env.example .env
+# Set BRAIN_API_KEY in .env.
+docker compose -f deploy/docker-compose.yml up -d
+```
+
+Set `BRAIN_HTTP_BIND` and `BRAIN_HTTP_PORT` when the HTTP service must be
+reachable on a private host interface or a different host port. The Compose
+HTTP service sets `BRAIN_HTTP_ADDR=0.0.0.0:8787` inside the container; host
+interface exposure is controlled by the port mapping.
+
 ## Query lifecycle
 
 ```text
@@ -68,31 +92,21 @@ The first implementation should use hybrid full-text and semantic retrieval, wit
 
 ## MCP tools for v0.1
 
-### `search_knowledge`
+### `brain_search`
 
-Searches across authorized resources and derived projections.
+The alpha server exposes `brain_search`, which searches authorized resources
+and returns compact source-backed hits.
 
 Inputs:
 
-- query text;
-- optional resource types;
-- optional project/team/source filters;
-- optional time range;
-- result limit.
+- `query` text;
+- optional `resource_type`;
+- optional `limit` from 1 to 100.
 
-Returns ranked results with evidence references.
-
-### `get_resource`
-
-Fetches one authorized canonical resource and its source references.
-
-### `get_evidence`
-
-Fetches the source observations supporting a resource, assertion, relation, or projection.
-
-### `find_related`
-
-Finds authorized resources connected to an entity or resource through typed relations.
+Returns ranked results with resource IDs, source-system identifiers, source URLs
+when available, summaries, timestamps, and relevance scores. `get_resource`,
+`get_evidence`, and `find_related` remain planned capabilities rather than
+implemented alpha tools.
 
 ## Result contract
 

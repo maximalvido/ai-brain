@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Proposed
+Status: Implemented in the alpha server; broader capabilities remain proposed
 
 ## Boundary
 
@@ -59,6 +59,19 @@ AI Brain application
 - Relationship tables for initial graph-like traversal.
 
 The first implementation should use one reference relational backend with full-text and vector capabilities where practical. Backend abstractions should be introduced at meaningful boundaries, not as a promise to support every database from the beginning.
+
+The checked-in Compose deployment runs the initial services as one image:
+
+```text
+Docker Compose
+├── postgres   PostgreSQL 16 and schema storage
+├── http       HTTP MCP transport on host port 8787 by default
+└── mcp        stdio MCP transport for attached local integrations
+```
+
+Both server services wait for PostgreSQL health and run the checked-in initial
+migration on startup. The HTTP service is bound to localhost by default; put a
+TLS reverse proxy or private load balancer in front of it for shared access.
 
 ## Knowledge lifecycle
 

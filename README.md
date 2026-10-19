@@ -24,7 +24,7 @@ alpha releases.
 - PostgreSQL-backed full-text retrieval;
 - source references and freshness metadata;
 - an MCP `brain_search` tool for connected AI clients;
-- an HTTP MCP endpoint intended to run once on a private company server.
+- an HTTP MCP endpoint and stdio MCP service for local or private-server use.
 
 ## Deployment model
 
@@ -79,6 +79,12 @@ docker compose -f deploy/docker-compose.yml up -d
 This starts PostgreSQL, the HTTP MCP server, and the stdio MCP service. The
 server runs the checked-in migrations when it connects to the database. Set
 `BRAIN_API_KEY` in `.env` before starting Compose.
+
+To start only the database and HTTP endpoint:
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d postgres http
+```
 
 ### 3. Build and test
 
@@ -141,8 +147,8 @@ interface when a reverse proxy or load balancer runs on another machine. Set
 `BRAIN_HTTP_PORT` if the host port 8787 is already in use.
 
 The Compose `mcp` service runs the stdio transport for integrations that can
-attach to a container process. For a local client that launches MCP itself,
-the Cargo command below remains the simplest option.
+attach to a container process. It is not a network endpoint. For a local client
+that launches MCP itself, the Cargo command below remains the simplest option.
 
 Keep `127.0.0.1` when a reverse proxy runs on the same server. If the proxy is
 on another private host, bind to the server’s private interface instead. Do
@@ -208,11 +214,14 @@ machine. It is not the normal setup for employees using a shared server.
 | `LINEAR_API_KEY` | Read-only Linear connector credential | unset |
 | `BRAIN_API_KEY` | Installation key for MCP and HTTP access | unset |
 | `BRAIN_HTTP_ADDR` | HTTP bind address on the shared server | `127.0.0.1:8787` |
+| `BRAIN_HTTP_BIND` | Host interface for the Compose HTTP port | `127.0.0.1` |
+| `BRAIN_HTTP_PORT` | Host port for the Compose HTTP endpoint | `8787` |
 
 ## Repository layout
 
 ```text
 apps/brain-server/             CLI, stdio MCP, and HTTP MCP entry points
+Dockerfile                     Multi-stage image for the server services
 crates/brain-domain/           Domain types and contracts
 crates/brain-connectors/       Connector abstractions
 crates/connector-linear/       Linear source connector
