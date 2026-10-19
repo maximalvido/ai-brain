@@ -1,0 +1,17 @@
+[package]
+name = "connector-linear"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Linear connector for AI Brain"
+
+[dependencies]
+async-trait.workspace = true
+brain-connectors = { path = "../brain-connectors" }
+brain-domain = { path = "../brain-domain" }
+dotenvy.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

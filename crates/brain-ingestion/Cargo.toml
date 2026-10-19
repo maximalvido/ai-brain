@@ -1,0 +1,13 @@
+[package]
+name = "brain-ingestion"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Ingestion runtime for AI Brain"
+
+[dependencies]
+brain-domain = { path = "../brain-domain" }
+brain-storage = { path = "../brain-storage" }
+
+[lints]
+workspace = true

@@ -1,0 +1,122 @@
+# Retrieval and MCP
+
+Status: Proposed
+
+## Purpose
+
+AI Brain exposes knowledge retrieval to MCP-compatible clients. It returns compact, structured, permission-filtered evidence. The client is responsible for turning that evidence into the final conversational response.
+
+## Query lifecycle
+
+```text
+MCP request
+  → authenticate principal
+  → interpret natural-language query
+  → create structured query
+  → select retrieval strategy
+  → retrieve candidates
+  → apply permissions
+  → rank and select evidence
+  → return results and citations
+```
+
+## Query interpretation
+
+The interpreter may use deterministic parsing, model assistance, or both. Model output must be schema-validated and must not directly authorize access or execute source actions.
+
+Example structured query:
+
+```json
+{
+  "text": "What is blocking the mobile release?",
+  "intent": "project_status",
+  "entities": ["mobile release"],
+  "filters": {"state": "active"},
+  "time_range": "current",
+  "needs": ["issues", "blockers", "recent_discussions"]
+}
+```
+
+## Retrieval strategies
+
+The planner can combine:
+
+- exact and full-text search;
+- semantic search;
+- structured filters;
+- entity lookup;
+- relationship traversal;
+- temporal filtering.
+
+The first implementation should use hybrid full-text and semantic retrieval, with structured filters where the query identifies known entities or fields.
+
+## MCP tools for v0.1
+
+### `search_knowledge`
+
+Searches across authorized resources and derived projections.
+
+Inputs:
+
+- query text;
+- optional resource types;
+- optional project/team/source filters;
+- optional time range;
+- result limit.
+
+Returns ranked results with evidence references.
+
+### `get_resource`
+
+Fetches one authorized canonical resource and its source references.
+
+### `get_evidence`
+
+Fetches the source observations supporting a resource, assertion, relation, or projection.
+
+### `find_related`
+
+Finds authorized resources connected to an entity or resource through typed relations.
+
+## Result contract
+
+Every result should include, where available:
+
+```text
+- result_id
+- result_type
+- title or label
+- compact content or structured value
+- relevance score
+- source system
+- source object ID
+- source URL
+- source timestamps
+- observed timestamp
+- freshness state
+- confidence
+- provenance references
+```
+
+The API should distinguish:
+
+- no matching knowledge;
+- matching knowledge that is stale;
+- matching knowledge that is contradictory;
+- matching knowledge that cannot be returned because of authorization.
+
+Authorization failures must not reveal the existence of hidden resources.
+
+## MCP independence
+
+The internal retrieval API is the primary contract. MCP is an adapter over that contract. Provider-specific behavior for ChatGPT, Claude, Gemini, or other clients must not leak into the knowledge model or retrieval engine.
+
+## Future capabilities
+
+- subscriptions to knowledge changes;
+- answer synthesis inside AI Brain;
+- saved searches;
+- query explanations;
+- task-specific context assembly.
+
+These are not required for v0.1.

@@ -1,0 +1,23 @@
+[package]
+name = "brain-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "AI Brain self-hosted server"
+
+[dependencies]
+axum.workspace = true
+brain-connectors = { path = "../../crates/brain-connectors" }
+brain-compiler = { path = "../../crates/brain-compiler" }
+brain-ingestion = { path = "../../crates/brain-ingestion" }
+brain-storage = { path = "../../crates/brain-storage" }
+brain-storage-postgres = { path = "../../crates/brain-storage-postgres" }
+brain-domain = { path = "../../crates/brain-domain" }
+connector-linear = { path = "../../crates/connector-linear" }
+dotenvy.workspace = true
+sqlx.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

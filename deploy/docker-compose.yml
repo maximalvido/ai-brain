@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_brain}
+      POSTGRES_USER: ${POSTGRES_USER:-ai_brain}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ai_brain_local}
+    ports:
+      - "${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - ai-brain-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_brain -d ai_brain"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  ai-brain-postgres:

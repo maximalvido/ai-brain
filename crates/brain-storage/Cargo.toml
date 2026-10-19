@@ -1,0 +1,13 @@
+[package]
+name = "brain-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Storage contracts for AI Brain"
+
+[dependencies]
+async-trait.workspace = true
+brain-domain = { path = "../brain-domain" }
+
+[lints]
+workspace = true
