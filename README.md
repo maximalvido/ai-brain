@@ -70,13 +70,15 @@ Review `.env` and set at least a private `BRAIN_API_KEY`. Keep `.env` out of
 version control. The default configuration uses PostgreSQL on port `55432` so
 it does not collide with a typical local PostgreSQL installation.
 
-### 2. Start PostgreSQL
+### 2. Start the database and MCP services
 
 ```bash
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
-The server runs the checked-in migrations when it connects to the database.
+This starts PostgreSQL, the HTTP MCP server, and the stdio MCP service. The
+server runs the checked-in migrations when it connects to the database. Set
+`BRAIN_API_KEY` in `.env` before starting Compose.
 
 ### 3. Build and test
 
@@ -124,13 +126,23 @@ an absolute Cargo manifest path in that client’s configuration.
 
 ### Shared server: HTTP MCP over the company VPN
 
-On the AI Brain server, bind the HTTP endpoint to an address reachable by the
-reverse proxy or private load balancer:
+Compose runs the HTTP endpoint on port `8787` by default. On the AI Brain
+server, bind the endpoint to an address reachable by the reverse proxy or
+private load balancer:
 
 ```bash
-export BRAIN_HTTP_ADDR=127.0.0.1:8787
-cargo run -p brain-server -- serve-http
+docker compose -f deploy/docker-compose.yml up -d http
 ```
+
+The HTTP MCP endpoint is available at `http://localhost:8787/mcp` locally, or
+through the private HTTPS address published by your reverse proxy. Compose
+binds it to localhost by default; set `BRAIN_HTTP_BIND` to a private host
+interface when a reverse proxy or load balancer runs on another machine. Set
+`BRAIN_HTTP_PORT` if the host port 8787 is already in use.
+
+The Compose `mcp` service runs the stdio transport for integrations that can
+attach to a container process. For a local client that launches MCP itself,
+the Cargo command below remains the simplest option.
 
 Keep `127.0.0.1` when a reverse proxy runs on the same server. If the proxy is
 on another private host, bind to the server’s private interface instead. Do

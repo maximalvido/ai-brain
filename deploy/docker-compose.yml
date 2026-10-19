@@ -15,5 +15,34 @@ services:
       timeout: 5s
       retries: 10
 
+  http:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-ai_brain}:${POSTGRES_PASSWORD:-ai_brain_local}@postgres:5432/${POSTGRES_DB:-ai_brain}
+      BRAIN_API_KEY: ${BRAIN_API_KEY:?BRAIN_API_KEY must be set}
+      BRAIN_HTTP_ADDR: 0.0.0.0:8787
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${BRAIN_HTTP_BIND:-127.0.0.1}:${BRAIN_HTTP_PORT:-8787}:8787"
+    restart: unless-stopped
+
+  mcp:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    command: ["mcp"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-ai_brain}:${POSTGRES_PASSWORD:-ai_brain_local}@postgres:5432/${POSTGRES_DB:-ai_brain}
+      BRAIN_API_KEY: ${BRAIN_API_KEY:?BRAIN_API_KEY must be set}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    stdin_open: true
+    restart: unless-stopped
+
 volumes:
   ai-brain-postgres:
