@@ -1,3 +1,5 @@
 .env
 /target/
 codex-yolo.toml
+/docs/private/
+/docs/drafts/

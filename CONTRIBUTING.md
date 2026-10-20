@@ -13,6 +13,11 @@ and architecture discussions.
 4. Never include real company data, credentials, private source URLs, or raw
    exports in a commit, fixture, screenshot, or issue.
 
+The `docs/` directory is public and describes the current published version
+only. Keep roadmaps, unreleased designs, evaluations, meeting notes, and
+architecture decision records outside the repository; local drafts belong in
+the ignored `docs/private/` or `docs/drafts/` directories.
+
 ## Local setup
 
 ```bash
@@ -29,8 +34,9 @@ Linear connector or running a real synchronization.
 ## Development workflow
 
 Keep changes focused and explain the user or system behavior they change.
-Prefer small, reviewable commits. Update the relevant documentation and an
-architecture decision record when a change affects a contract or boundary.
+Prefer small, reviewable commits. Update the relevant current-version
+documentation when a change affects a user-visible command, service, or
+protocol.
 
 Run the local checks before opening a pull request:
 

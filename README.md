@@ -237,6 +237,7 @@ migrations/                     SQL schema migrations
 
 ## Documentation
 
+- [Documentation index](docs/README.md)
 - [Contributing](CONTRIBUTING.md)
 - [Product scope](docs/01-product-scope.md)
 - [Architecture](docs/02-architecture.md)
@@ -244,11 +245,11 @@ migrations/                     SQL schema migrations
 - [Connectors and ingestion](docs/04-connectors-and-ingestion.md)
 - [Authentication and permissions](docs/05-authentication-and-permissions.md)
 - [Retrieval and MCP](docs/06-retrieval-and-mcp.md)
-- [Roadmap](docs/07-roadmap.md)
-- [Implementation design](docs/08-implementation-design.md)
-- [Evaluation](docs/09-evaluation.md)
-- [PostgreSQL adapter](docs/10-postgres-adapter.md)
-- [Architecture decision records](docs/adr/)
+- [PostgreSQL adapter](docs/07-postgres-adapter.md)
+
+The public documentation describes the current published version only. Private
+roadmaps, drafts, design notes, evaluations, and architecture decision records
+are intentionally kept out of the repository documentation tree.
 
 ## Security
 
