@@ -23,6 +23,10 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-ai_brain}:${POSTGRES_PASSWORD:-ai_brain_local}@postgres:5432/${POSTGRES_DB:-ai_brain}
       BRAIN_API_KEY: ${BRAIN_API_KEY:?BRAIN_API_KEY must be set}
       BRAIN_HTTP_ADDR: 0.0.0.0:8787
+      LINEAR_API_KEY: ${LINEAR_API_KEY:-}
+      LINEAR_WEBHOOK_SECRET: ${LINEAR_WEBHOOK_SECRET:-}
+      SLACK_API_TOKEN: ${SLACK_API_TOKEN:-}
+      SLACK_SIGNING_SECRET: ${SLACK_SIGNING_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,6 +43,24 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-ai_brain}:${POSTGRES_PASSWORD:-ai_brain_local}@postgres:5432/${POSTGRES_DB:-ai_brain}
       LINEAR_API_KEY: ${LINEAR_API_KEY:-}
       LINEAR_SYNC_INTERVAL_SECONDS: ${LINEAR_SYNC_INTERVAL_SECONDS:-300}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  slack-sync:
+    profiles: ["slack"]
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    command: ["sync-slack-loop"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-ai_brain}:${POSTGRES_PASSWORD:-ai_brain_local}@postgres:5432/${POSTGRES_DB:-ai_brain}
+      SLACK_API_TOKEN: ${SLACK_API_TOKEN:-}
+      SLACK_CONVERSATION_TYPES: ${SLACK_CONVERSATION_TYPES:-public_channel}
+      SLACK_INITIAL_LOOKBACK_SECONDS: ${SLACK_INITIAL_LOOKBACK_SECONDS:-604800}
+      SLACK_SYNC_INTERVAL_SECONDS: ${SLACK_SYNC_INTERVAL_SECONDS:-300}
+      SLACK_TEAM_ID: ${SLACK_TEAM_ID:-}
     depends_on:
       postgres:
         condition: service_healthy

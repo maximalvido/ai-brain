@@ -1,18 +1,21 @@
 use axum::{
     Json, Router,
+    body::Bytes,
     extract::State,
     http::{HeaderMap, StatusCode},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     routing::post,
 };
 use brain_compiler::compile_and_write;
-use brain_connectors::{Connector, Cursor};
+use brain_connectors::{Connector, Cursor, WebhookRequest};
 use brain_domain::PrincipalId;
 use brain_ingestion::{IngestionService, observation_for};
 use brain_storage::{ResourceSearchQuery, ResourceSearchRepository};
 use brain_storage_postgres::{PgObservationRepository, PgResourceWriter, connect_and_migrate};
 use connector_claude::ClaudeArtifactConnector;
 use connector_linear::LinearConnector;
+use connector_slack::SlackApiConnector;
+use connector_slack::SlackExportConnector;
 use serde_json::{Value, json};
 use sqlx::{PgPool, Row};
 use std::io::BufRead;
@@ -27,12 +30,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some("sync") => sync_linear().await,
             Some("sync-loop") => sync_linear_loop().await,
             Some("import-claude-artifacts") => import_claude_artifacts().await,
+            Some("import-slack-export") => import_slack_export().await,
+            Some("sync-slack") => sync_slack().await,
+            Some("sync-slack-loop") => sync_slack_loop().await,
             Some("validate-linear") => validate_linear().await,
             Some("search") => search_resources().await,
             Some("mcp") => mcp_server().await,
             Some("serve-http") => serve_http().await,
             _ => {
-                println!("Usage: brain-server <sync|sync-loop|import-claude-artifacts <export.zip>|validate-linear|search <text>|mcp|serve-http>");
+                println!("Usage: brain-server <sync|sync-loop|sync-slack|sync-slack-loop|import-claude-artifacts <export.zip>|import-slack-export <export.zip>|validate-linear|search <text>|mcp|serve-http>");
                 Ok(())
             }
         }
@@ -41,6 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[derive(Clone)]
 struct HttpState {
+    pool: PgPool,
     repository: PgResourceWriter,
     access_key: String,
 }
@@ -49,6 +56,7 @@ async fn serve_http() -> Result<(), Box<dyn std::error::Error>> {
     let database_url = std::env::var("DATABASE_URL")?;
     let pool = connect_and_migrate(&database_url).await?;
     let state = HttpState {
+        pool: pool.clone(),
         repository: PgResourceWriter::new(pool.clone()),
         access_key: configured_access_key()?,
     };
@@ -61,10 +69,126 @@ async fn serve_http() -> Result<(), Box<dyn std::error::Error>> {
         listener,
         Router::new()
             .route("/mcp", post(http_mcp))
+            .route("/webhooks/linear", post(linear_webhook))
+            .route("/webhooks/slack", post(slack_webhook))
             .with_state(state),
     )
     .await?;
     Ok(())
+}
+
+async fn linear_webhook(
+    State(state): State<HttpState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let body_text = String::from_utf8_lossy(&body).into_owned();
+    let request = webhook_request(&headers, body_text.clone(), "linear-signature");
+    let connector = match LinearConnector::from_env() {
+        Ok(connector) => connector,
+        Err(error) => return webhook_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    };
+    match process_webhook(&state, &connector, request).await {
+        Ok((inserted, duplicates)) => (
+            StatusCode::OK,
+            Json(json!({"ok": true, "inserted": inserted, "duplicates": duplicates})),
+        )
+            .into_response(),
+        Err(error) => webhook_error(webhook_error_status(&error), error),
+    }
+}
+
+async fn slack_webhook(
+    State(state): State<HttpState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let body_text = String::from_utf8_lossy(&body).into_owned();
+    let request = webhook_request(&headers, body_text.clone(), "x-slack-signature");
+    let connector = match SlackApiConnector::from_env() {
+        Ok(connector) => connector,
+        Err(error) => return webhook_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()),
+    };
+    match process_webhook(&state, &connector, request).await {
+        Ok((inserted, duplicates)) => {
+            let payload: Value = serde_json::from_str(&body_text).unwrap_or(Value::Null);
+            if payload.get("type").and_then(Value::as_str) == Some("url_verification")
+                && let Some(challenge) = payload.get("challenge").and_then(Value::as_str)
+            {
+                return (StatusCode::OK, Json(json!({"challenge": challenge}))).into_response();
+            }
+            (
+                StatusCode::OK,
+                Json(json!({"ok": true, "inserted": inserted, "duplicates": duplicates})),
+            )
+                .into_response()
+        }
+        Err(error) => webhook_error(webhook_error_status(&error), error),
+    }
+}
+
+fn webhook_request(headers: &HeaderMap, body: String, signature_header: &str) -> WebhookRequest {
+    let values = headers
+        .iter()
+        .filter_map(|(name, value)| {
+            Some((
+                name.as_str().to_ascii_lowercase(),
+                value.to_str().ok()?.to_owned(),
+            ))
+        })
+        .collect();
+    WebhookRequest {
+        signature: headers
+            .get(signature_header)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned),
+        body,
+        headers: values,
+    }
+}
+
+async fn process_webhook(
+    state: &HttpState,
+    connector: &dyn Connector,
+    request: WebhookRequest,
+) -> Result<(usize, usize), String> {
+    let batch = connector
+        .handle_webhook(request)
+        .await
+        .map_err(|error| error.to_string())?;
+    let repository = PgObservationRepository::new(state.pool.clone());
+    let ingestion = IngestionService::new(repository);
+    let mut inserted = 0;
+    let mut duplicates = 0;
+    for event in batch.events {
+        let observation = observation_for(event);
+        match ingestion
+            .ingest(observation.event.clone())
+            .await
+            .map_err(|error| error.to_string())?
+        {
+            brain_storage::AppendResult::Inserted(_) => inserted += 1,
+            brain_storage::AppendResult::AlreadyExists(_) => duplicates += 1,
+        }
+        compile_and_write(&state.repository, &observation)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    Ok((inserted, duplicates))
+}
+
+fn webhook_error_status(error: &str) -> StatusCode {
+    if error.contains("signature") || error.contains("timestamp") {
+        StatusCode::UNAUTHORIZED
+    } else if error.contains("not JSON") || error.contains("omitted") {
+        StatusCode::BAD_REQUEST
+    } else {
+        StatusCode::INTERNAL_SERVER_ERROR
+    }
+}
+
+fn webhook_error(status: StatusCode, message: String) -> Response {
+    (status, Json(json!({"error": message}))).into_response()
 }
 
 async fn http_mcp(
@@ -487,6 +611,136 @@ async fn import_claude_artifacts() -> Result<(), Box<dyn std::error::Error>> {
     );
     pool.close().await;
     Ok(())
+}
+
+async fn import_slack_export() -> Result<(), Box<dyn std::error::Error>> {
+    let path = std::env::args()
+        .nth(2)
+        .ok_or("Slack export path is required")?;
+    let connector = SlackExportConnector::from_path(path);
+    let health = connector.validate().await?;
+    if !health.authenticated {
+        return Err(health
+            .message
+            .unwrap_or_else(|| "Slack export is not available".into())
+            .into());
+    }
+
+    let database_url = std::env::var("DATABASE_URL")?;
+    let pool = connect_and_migrate(&database_url).await?;
+    sqlx::query(
+        "INSERT INTO connectors (id, source_system, display_name, config_json, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $5)
+         ON CONFLICT (id) DO NOTHING",
+    )
+    .bind("slack-export")
+    .bind("slack")
+    .bind("Slack workspace export")
+    .bind("{}")
+    .bind(runtime_timestamp())
+    .execute(&pool)
+    .await?;
+
+    let repository = PgObservationRepository::new(pool.clone());
+    let ingestion = IngestionService::new(repository);
+    let resource_writer = PgResourceWriter::new(pool.clone());
+    let batch = connector.backfill(Default::default()).await?;
+    let total = batch.events.len();
+    let mut inserted = 0;
+    let mut duplicates = 0;
+
+    for event in batch.events {
+        let observation = observation_for(event);
+        match ingestion.ingest(observation.event.clone()).await? {
+            brain_storage::AppendResult::Inserted(_) => inserted += 1,
+            brain_storage::AppendResult::AlreadyExists(_) => duplicates += 1,
+        }
+        compile_and_write(&resource_writer, &observation).await?;
+    }
+
+    println!(
+        "Slack export import complete: total={} inserted={} duplicates={}",
+        total, inserted, duplicates
+    );
+    pool.close().await;
+    Ok(())
+}
+
+async fn sync_slack() -> Result<(), Box<dyn std::error::Error>> {
+    let connector = SlackApiConnector::from_env()?;
+    let health = connector.validate().await?;
+    if !health.authenticated {
+        return Err("Slack authentication failed".into());
+    }
+
+    let database_url = std::env::var("DATABASE_URL")?;
+    let pool = connect_and_migrate(&database_url).await?;
+    sqlx::query(
+        "INSERT INTO connectors (id, source_system, display_name, config_json, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $5)
+         ON CONFLICT (id) DO NOTHING",
+    )
+    .bind("slack-api")
+    .bind("slack")
+    .bind("Slack API")
+    .bind("{}")
+    .bind(runtime_timestamp())
+    .execute(&pool)
+    .await?;
+
+    let cursor = load_connector_cursor(&pool, "slack-api").await?;
+    let repository = PgObservationRepository::new(pool.clone());
+    let ingestion = IngestionService::new(repository);
+    let resource_writer = PgResourceWriter::new(pool.clone());
+    let batch = connector.poll(cursor.clone()).await?;
+    let total = batch.events.len();
+    let mut inserted = 0;
+    let mut duplicates = 0;
+
+    for event in batch.events {
+        let observation = observation_for(event);
+        match ingestion.ingest(observation.event.clone()).await? {
+            brain_storage::AppendResult::Inserted(_) => inserted += 1,
+            brain_storage::AppendResult::AlreadyExists(_) => duplicates += 1,
+        }
+        compile_and_write(&resource_writer, &observation).await?;
+    }
+
+    if let Some(next_cursor) = batch.next_cursor.as_ref() {
+        save_connector_cursor(&pool, "slack-api", next_cursor).await?;
+    }
+    println!(
+        "Slack sync complete: total={} inserted={} duplicates={} cursor={}",
+        total,
+        inserted,
+        duplicates,
+        batch
+            .next_cursor
+            .as_ref()
+            .or(cursor.as_ref())
+            .map(|cursor| cursor.0.as_str())
+            .unwrap_or("none")
+    );
+    pool.close().await;
+    Ok(())
+}
+
+async fn sync_slack_loop() -> Result<(), Box<dyn std::error::Error>> {
+    let interval_seconds = std::env::var("SLACK_SYNC_INTERVAL_SECONDS")
+        .unwrap_or_else(|_| "300".into())
+        .parse::<u64>()
+        .map_err(|_| "SLACK_SYNC_INTERVAL_SECONDS must be an integer")?;
+    if interval_seconds == 0 {
+        return Err("SLACK_SYNC_INTERVAL_SECONDS must be greater than zero".into());
+    }
+
+    eprintln!("Slack sync loop started: interval={}s", interval_seconds);
+    loop {
+        if let Err(error) = sync_slack().await {
+            eprintln!("Slack sync failed; retrying after interval: {error}");
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(interval_seconds)).await;
+    }
 }
 
 async fn load_connector_cursor(

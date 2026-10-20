@@ -18,7 +18,7 @@ alpha releases.
 
 ## What it provides
 
-- Connectors for company systems, starting with Linear, with Slack planned;
+- Connectors for company systems, starting with Linear and Slack synchronization;
 - replayable ingestion of raw source observations;
 - canonical resources and provenance-aware compilation;
 - PostgreSQL-backed full-text retrieval;
@@ -96,11 +96,17 @@ single synchronization with:
 cargo run -p brain-server -- sync
 ```
 
+The `slack-sync` service polls Slack using the configured Slack API token and
+stores its latest message timestamp in PostgreSQL. The HTTP service also
+accepts signed Linear and Slack webhook deliveries at `/webhooks/linear` and
+`/webhooks/slack`; polling remains enabled for recovery. Configure the source
+apps and secrets as described in the [Slack connector guide](docs/08-slack-connector.md)
+and the connector documentation.
+
 #### Experimental: Claude organization artifacts
 
-This importer is experimental and intended for the founder pilot. It accepts
-an administrator export, not a live Claude API connection. Keep the archive
-outside version control and run:
+This importer is experimental and accepts an administrator export, not a live
+Claude API connection. Keep the archive outside version control and run:
 
 ```bash
 cargo run -p brain-server -- import-claude-artifacts /secure/path/claude-export.zip
@@ -237,7 +243,14 @@ machine. It is not the normal setup for employees using a shared server.
 | `POSTGRES_PASSWORD` | Compose database password | `ai_brain_local` |
 | `POSTGRES_PORT` | Host port mapped to PostgreSQL | `55432` |
 | `LINEAR_API_KEY` | Read-only Linear connector credential | unset |
+| `LINEAR_WEBHOOK_SECRET` | Linear webhook signing secret | unset |
 | `LINEAR_SYNC_INTERVAL_SECONDS` | Linear polling interval in seconds | `300` |
+| `SLACK_API_TOKEN` | Slack bot or user token for live synchronization | unset |
+| `SLACK_SIGNING_SECRET` | Slack Events API signing secret | unset |
+| `SLACK_CONVERSATION_TYPES` | Slack conversation types to request from the API | `public_channel` |
+| `SLACK_INITIAL_LOOKBACK_SECONDS` | Initial Slack history window | `604800` |
+| `SLACK_SYNC_INTERVAL_SECONDS` | Slack polling interval in seconds | `300` |
+| `SLACK_TEAM_ID` | Optional Slack team ID for org-level tokens | unset |
 | `BRAIN_API_KEY` | Installation key for MCP and HTTP access | unset |
 | `BRAIN_HTTP_ADDR` | HTTP bind address on the shared server | `127.0.0.1:8787` |
 | `BRAIN_HTTP_BIND` | Host interface for the Compose HTTP port | `127.0.0.1` |
@@ -272,6 +285,7 @@ migrations/                     SQL schema migrations
 - [Authentication and permissions](docs/05-authentication-and-permissions.md)
 - [Retrieval and MCP](docs/06-retrieval-and-mcp.md)
 - [PostgreSQL adapter](docs/07-postgres-adapter.md)
+- [Slack export connector](docs/08-slack-connector.md)
 
 The public documentation describes the current published version only. Private
 roadmaps, drafts, design notes, evaluations, and architecture decision records

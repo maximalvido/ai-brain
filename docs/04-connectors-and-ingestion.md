@@ -6,25 +6,44 @@ Status: Proposed
 
 Connectors hide source-specific APIs while exposing a consistent, replayable ingestion contract. Webhooks are preferred when available, but polling and backfills must remain first-class capabilities.
 
-The current Linear connector uses incremental polling. The `linear-sync`
-Compose service performs an initial backfill and stores the latest Linear
+The current Linear connector supports signed webhooks plus incremental polling.
+Configure Linear to deliver resource changes to `/webhooks/linear`; the handler
+verifies `Linear-Signature` and writes events through the normal ingestion path.
+The `linear-sync` Compose service remains a recovery poller: it performs an
+initial backfill and stores the latest Linear
 `updatedAt` value in `connector_cursors`; later runs request only resources
 updated at or after that cursor, relying on idempotent observation writes to
 make the small overlap safe. The interval is configured with
 `LINEAR_SYNC_INTERVAL_SECONDS` and defaults to five minutes.
 
+### Linear webhook setup
+
+Create a Linear webhook for the organization or public teams and configure its
+URL as `https://your-brain-host.example/webhooks/linear`. Subscribe to the
+resource types required by the installation, then store the webhook signing
+secret as `LINEAR_WEBHOOK_SECRET`. The handler verifies the raw body against
+`Linear-Signature` and accepts create, update, and removal events. Keep polling
+enabled because it provides recovery for missed deliveries.
+
 ### Experimental: Claude organization artifacts
 
 Claude artifacts are currently imported from an administrator export with
-`brain-server import-claude-artifacts <export.zip>`. This is a founder-pilot
-feature, not a production connector or live Claude integration. The export
-schema is not guaranteed stable yet, so imports must be tested against a
-sanitized export before operational use.
+`brain-server import-claude-artifacts <export.zip>`. This is an experimental
+export connector, not a live Claude integration. The export schema is not
+guaranteed stable yet, so imports must be tested against a sanitized export
+before operational use.
 
 The importer fails closed: only records with explicit organization-wide
 visibility become observations. Unknown, private, project-scoped, and public
 records are not indexed. Artifact versions are retained as observations while
 the current artifact remains a single searchable resource.
+
+Slack supports an [export importer](08-slack-connector.md), signed Events API
+webhooks, and live API polling. Configure Slack to deliver public-channel
+message events to `/webhooks/slack`; the handler verifies the Slack signing
+secret and writes events through the normal ingestion path. The `slack-sync`
+Compose service remains a recovery poller and stores its latest message
+timestamp in PostgreSQL.
 
 ## Connector responsibilities
 

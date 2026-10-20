@@ -16,6 +16,7 @@ decision records are maintained outside the public repository documentation.
 - [Authentication and permissions](05-authentication-and-permissions.md)
 - [Retrieval and MCP](06-retrieval-and-mcp.md)
 - [PostgreSQL adapter](07-postgres-adapter.md)
+- [Slack export connector](08-slack-connector.md)
 
 When a user-visible behavior changes, update the relevant page and the version
 information in the root [README](../README.md). Do not add roadmap or draft

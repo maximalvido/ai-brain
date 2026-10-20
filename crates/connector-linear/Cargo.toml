@@ -10,8 +10,10 @@ async-trait.workspace = true
 brain-connectors = { path = "../brain-connectors" }
 brain-domain = { path = "../brain-domain" }
 dotenvy.workspace = true
+hmac.workspace = true
 reqwest.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 
 [lints]
 workspace = true

@@ -182,6 +182,7 @@ dependencies = [
  "brain-storage-postgres",
  "connector-claude",
  "connector-linear",
+ "connector-slack",
  "dotenvy",
  "serde_json",
  "sqlx",
@@ -279,8 +280,26 @@ dependencies = [
  "brain-connectors",
  "brain-domain",
  "dotenvy",
+ "hmac",
  "reqwest",
  "serde_json",
+ "sha2",
+]
+
+[[package]]
+name = "connector-slack"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "async-trait",
+ "brain-connectors",
+ "brain-domain",
+ "dotenvy",
+ "hmac",
+ "reqwest",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "zip",
 ]
 
 [[package]]

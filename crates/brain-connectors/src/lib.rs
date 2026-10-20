@@ -6,6 +6,7 @@
 use async_trait::async_trait;
 use brain_domain::{ConnectorId, DomainError, DomainResult, SourceEvent, SourceSystem};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ConnectorCapabilities {
@@ -43,6 +44,8 @@ pub struct ReconcileRequest {
 pub struct WebhookRequest {
     pub signature: Option<String>,
     pub body: String,
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

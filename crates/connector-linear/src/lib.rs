@@ -3,14 +3,16 @@
 use async_trait::async_trait;
 use brain_connectors::{
     BackfillRequest, ChangeBatch, Connector, ConnectorCapabilities, ConnectorHealth, Cursor,
-    ReconcileRequest, WebhookRequest, unsupported,
+    ReconcileRequest, WebhookRequest,
 };
 use brain_domain::{
     ConnectorId, DomainError, DomainResult, ObservationOperation, SourceEvent, SourceObjectId,
     SourceSystem,
 };
+use hmac::{Hmac, Mac};
 use reqwest::Client;
 use serde_json::{Value, json};
+use sha2::Sha256;
 
 const LINEAR_ENDPOINT: &str = "https://api.linear.app/graphql";
 const PAGE_SIZE: u64 = 100;
@@ -148,10 +150,10 @@ impl Connector for LinearConnector {
 
     fn capabilities(&self) -> ConnectorCapabilities {
         ConnectorCapabilities {
-            supports_webhooks: false,
+            supports_webhooks: true,
             supports_incremental_polling: true,
             supports_historical_backfill: true,
-            supports_deletions: false,
+            supports_deletions: true,
             supports_permissions: false,
             supports_reconciliation: true,
         }
@@ -186,8 +188,44 @@ impl Connector for LinearConnector {
         .await
     }
 
-    async fn handle_webhook(&self, _request: WebhookRequest) -> DomainResult<ChangeBatch> {
-        Err(unsupported("Linear webhooks"))
+    async fn handle_webhook(&self, request: WebhookRequest) -> DomainResult<ChangeBatch> {
+        let secret = std::env::var("LINEAR_WEBHOOK_SECRET")
+            .map_err(|_| DomainError("LINEAR_WEBHOOK_SECRET is not configured".into()))?;
+        verify_linear_signature(&secret, &request.body, request.signature.as_deref())?;
+
+        let payload: Value = serde_json::from_str(&request.body)
+            .map_err(|error| DomainError(format!("Linear webhook is not JSON: {error}")))?;
+        verify_linear_timestamp(&payload)?;
+        let data = payload
+            .get("data")
+            .ok_or_else(|| DomainError("Linear webhook omitted data".into()))?;
+        let resource_type = payload
+            .get("type")
+            .and_then(Value::as_str)
+            .ok_or_else(|| DomainError("Linear webhook omitted type".into()))?
+            .to_ascii_lowercase();
+        let action = payload
+            .get("action")
+            .and_then(Value::as_str)
+            .unwrap_or("update")
+            .to_ascii_lowercase();
+        let operation = if matches!(action.as_str(), "remove" | "delete" | "deleted") {
+            ObservationOperation::Delete
+        } else {
+            ObservationOperation::Upsert
+        };
+        let mut event = event_from_node(&self.id, &resource_type, data)?;
+        event.operation = operation;
+        if event.source_version.is_none() {
+            event.source_version = payload
+                .get("webhookTimestamp")
+                .and_then(Value::as_i64)
+                .map(|timestamp| timestamp.to_string());
+        }
+        Ok(ChangeBatch {
+            events: vec![event],
+            next_cursor: None,
+        })
     }
 
     async fn reconcile(&self, _request: ReconcileRequest) -> DomainResult<ChangeBatch> {
@@ -251,6 +289,51 @@ impl LinearConnector {
 
 fn graphql_string(value: &str) -> String {
     serde_json::to_string(value).expect("a string is always valid JSON")
+}
+
+fn verify_linear_signature(secret: &str, body: &str, signature: Option<&str>) -> DomainResult<()> {
+    let signature =
+        signature.ok_or_else(|| DomainError("Linear webhook signature is missing".into()))?;
+    let expected = hex_encode(
+        &Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+            .map_err(|_| DomainError("Linear webhook secret is invalid".into()))?
+            .chain_update(body.as_bytes())
+            .finalize()
+            .into_bytes(),
+    );
+    if constant_time_equal(expected.as_bytes(), signature.as_bytes()) {
+        Ok(())
+    } else {
+        Err(DomainError("Linear webhook signature is invalid".into()))
+    }
+}
+
+fn verify_linear_timestamp(payload: &Value) -> DomainResult<()> {
+    let timestamp = payload
+        .get("webhookTimestamp")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| DomainError("Linear webhook timestamp is missing".into()))?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| DomainError("system clock is before Unix epoch".into()))?
+        .as_millis() as i64;
+    if now.abs_diff(timestamp) > 60_000 {
+        return Err(DomainError("Linear webhook timestamp is too old".into()));
+    }
+    Ok(())
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .fold(0_u8, |difference, (a, b)| difference | (a ^ b))
+            == 0
 }
 
 fn event_from_node(
