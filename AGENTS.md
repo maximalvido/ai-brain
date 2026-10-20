@@ -22,7 +22,33 @@
 - `migrations/`: PostgreSQL schema applied on server startup.
 - `docker-compose.yml`: PostgreSQL, HTTP MCP, and stdio MCP services.
 - `deploy/Dockerfile`: multi-stage image for the server services.
-- `docs/`: product, architecture, protocol, and ADR documentation.
+- `docs/`: public documentation for the current published version.
+- `docs/private/`: local, ignored roadmaps, drafts, designs, evaluations, ADRs,
+  and other working material that must not be published.
+
+## Documentation Workflow
+
+- Keep `docs/` limited to documentation for the current published version.
+- Keep roadmaps, unreleased designs, meeting notes, evaluations, and ADRs in
+  the ignored `docs/private/` or `docs/drafts/` directories.
+- When adding or changing a user-visible command, service, protocol, or
+  connector, update all of the following as applicable:
+  1. the relevant page in `docs/`;
+  2. the public index at `docs/README.md`;
+  3. the root `README.md` when setup, configuration, or commands change.
+- Mark incomplete or pilot functionality clearly as `Experimental` in the
+  relevant public docs and explain its scope and limitations.
+- Do not link to ignored files from public documentation. Check for stale
+  links and private filenames before committing:
+
+```bash
+git diff --check
+rg -n "docs/(private|drafts|adr)/|docs/codex-yolo|docs/07-roadmap|docs/08-implementation|codex-yolo" README.md CONTRIBUTING.md docs || true
+```
+
+- For documentation-only changes, run `git diff --check`; for changes that
+  describe code or deployment behavior, also run the relevant Cargo and Compose
+  checks from the command table above.
 
 ## Key Conventions
 
