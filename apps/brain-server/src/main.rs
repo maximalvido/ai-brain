@@ -6,13 +6,14 @@ use axum::{
     routing::post,
 };
 use brain_compiler::compile_and_write;
-use brain_connectors::{BackfillRequest, Connector};
+use brain_connectors::{Connector, Cursor};
 use brain_domain::PrincipalId;
 use brain_ingestion::{IngestionService, observation_for};
 use brain_storage::{ResourceSearchQuery, ResourceSearchRepository};
 use brain_storage_postgres::{PgObservationRepository, PgResourceWriter, connect_and_migrate};
 use connector_linear::LinearConnector;
 use serde_json::{Value, json};
+use sqlx::{PgPool, Row};
 use std::io::BufRead;
 use std::net::SocketAddr;
 
@@ -23,12 +24,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     runtime.block_on(async {
         match std::env::args().nth(1).as_deref() {
             Some("sync") => sync_linear().await,
+            Some("sync-loop") => sync_linear_loop().await,
             Some("validate-linear") => validate_linear().await,
             Some("search") => search_resources().await,
             Some("mcp") => mcp_server().await,
             Some("serve-http") => serve_http().await,
             _ => {
-                println!("Usage: brain-server <sync|validate-linear|search <text>|mcp|serve-http>");
+                println!("Usage: brain-server <sync|sync-loop|validate-linear|search <text>|mcp|serve-http>");
                 Ok(())
             }
         }
@@ -376,10 +378,11 @@ async fn sync_linear() -> Result<(), Box<dyn std::error::Error>> {
     .execute(&pool)
     .await?;
 
+    let cursor = load_connector_cursor(&pool, "linear-main").await?;
     let repository = PgObservationRepository::new(pool.clone());
     let ingestion = IngestionService::new(repository);
     let resource_writer = PgResourceWriter::new(pool.clone());
-    let batch = connector.backfill(BackfillRequest::default()).await?;
+    let batch = connector.poll(cursor.clone()).await?;
     let total = batch.events.len();
     let mut inserted = 0;
     let mut duplicates = 0;
@@ -393,11 +396,74 @@ async fn sync_linear() -> Result<(), Box<dyn std::error::Error>> {
         compile_and_write(&resource_writer, &observation).await?;
     }
 
+    if let Some(next_cursor) = batch.next_cursor.as_ref() {
+        save_connector_cursor(&pool, "linear-main", next_cursor).await?;
+    }
+
     println!(
-        "Linear sync complete: total={} inserted={} duplicates={}",
-        total, inserted, duplicates
+        "Linear sync complete: total={} inserted={} duplicates={} cursor={}",
+        total,
+        inserted,
+        duplicates,
+        batch
+            .next_cursor
+            .as_ref()
+            .or(cursor.as_ref())
+            .map(|cursor| cursor.0.as_str())
+            .unwrap_or("none")
     );
     pool.close().await;
+    Ok(())
+}
+
+async fn sync_linear_loop() -> Result<(), Box<dyn std::error::Error>> {
+    let interval_seconds = std::env::var("LINEAR_SYNC_INTERVAL_SECONDS")
+        .unwrap_or_else(|_| "300".into())
+        .parse::<u64>()
+        .map_err(|_| "LINEAR_SYNC_INTERVAL_SECONDS must be an integer")?;
+    if interval_seconds == 0 {
+        return Err("LINEAR_SYNC_INTERVAL_SECONDS must be greater than zero".into());
+    }
+
+    eprintln!("Linear sync loop started: interval={}s", interval_seconds);
+    loop {
+        if let Err(error) = sync_linear().await {
+            eprintln!("Linear sync failed; retrying after interval: {error}");
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(interval_seconds)).await;
+    }
+}
+
+async fn load_connector_cursor(
+    pool: &PgPool,
+    connector_id: &str,
+) -> Result<Option<Cursor>, Box<dyn std::error::Error>> {
+    let row = sqlx::query("SELECT cursor FROM connector_cursors WHERE connector_id = $1")
+        .bind(connector_id)
+        .fetch_optional(pool)
+        .await?;
+    let cursor = match row {
+        Some(row) => row.try_get::<Option<String>, _>("cursor")?.map(Cursor),
+        None => None,
+    };
+    Ok(cursor)
+}
+
+async fn save_connector_cursor(
+    pool: &PgPool,
+    connector_id: &str,
+    cursor: &Cursor,
+) -> Result<(), Box<dyn std::error::Error>> {
+    sqlx::query(
+        "INSERT INTO connector_cursors (connector_id, cursor, updated_at)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (connector_id) DO UPDATE SET cursor = EXCLUDED.cursor, updated_at = EXCLUDED.updated_at",
+    )
+    .bind(connector_id)
+    .bind(&cursor.0)
+    .bind(runtime_timestamp())
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

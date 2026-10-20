@@ -78,9 +78,18 @@ impl LinearConnector {
         field: &str,
         selection: &str,
         resource_type: &str,
+        since: Option<&str>,
     ) -> DomainResult<Vec<SourceEvent>> {
+        let filter = since
+            .map(|value| {
+                format!(
+                    ", filter: {{ updatedAt: {{ gte: {} }} }}, orderBy: updatedAt",
+                    graphql_string(value)
+                )
+            })
+            .unwrap_or_default();
         let query = format!(
-            "query($first: Int!, $after: String) {{ {field}(first: $first, after: $after) {{ nodes {{ {selection} }} pageInfo {{ hasNextPage endCursor }} }} }}"
+            "query($first: Int!, $after: String) {{ {field}(first: $first, after: $after{filter}) {{ nodes {{ {selection} }} pageInfo {{ hasNextPage endCursor }} }} }}"
         );
         let mut after = None;
         let mut events = Vec::new();
@@ -140,7 +149,7 @@ impl Connector for LinearConnector {
     fn capabilities(&self) -> ConnectorCapabilities {
         ConnectorCapabilities {
             supports_webhooks: false,
-            supports_incremental_polling: false,
+            supports_incremental_polling: true,
             supports_historical_backfill: true,
             supports_deletions: false,
             supports_permissions: false,
@@ -165,51 +174,15 @@ impl Connector for LinearConnector {
     }
 
     async fn backfill(&self, request: BackfillRequest) -> DomainResult<ChangeBatch> {
-        let requested = if request.resource_types.is_empty() {
-            vec!["Team", "Project", "Issue"]
-        } else {
-            request.resource_types.iter().map(String::as_str).collect()
-        };
-        let mut events = Vec::new();
-
-        if requested.contains(&"Team") {
-            events.extend(
-                self.fetch_collection("teams", "id name key description updatedAt", "team")
-                    .await?,
-            );
-        }
-        if requested.contains(&"Project") {
-            events.extend(
-                self.fetch_collection(
-                    "projects",
-                    "id name description url status { name } updatedAt",
-                    "project",
-                )
-                .await?,
-            );
-        }
-        if requested.contains(&"Issue") {
-            events.extend(
-                self.fetch_collection(
-                    "issues",
-                    "id identifier title description url priority priorityLabel state { id name type } team { id name key } assignee { id name email } project { id name } updatedAt archivedAt",
-                    "issue",
-                )
-                .await?,
-            );
-        }
-
-        Ok(ChangeBatch {
-            events,
-            next_cursor: None,
-        })
+        let since = request.since.clone();
+        self.backfill_since(request, since.as_deref()).await
     }
 
-    async fn poll(&self, _cursor: Option<Cursor>) -> DomainResult<ChangeBatch> {
-        self.backfill(BackfillRequest {
-            resource_types: vec!["Team".into(), "Project".into(), "Issue".into()],
-            since: None,
-        })
+    async fn poll(&self, cursor: Option<Cursor>) -> DomainResult<ChangeBatch> {
+        self.backfill_since(
+            BackfillRequest::default(),
+            cursor.as_ref().map(|cursor| cursor.0.as_str()),
+        )
         .await
     }
 
@@ -220,6 +193,64 @@ impl Connector for LinearConnector {
     async fn reconcile(&self, _request: ReconcileRequest) -> DomainResult<ChangeBatch> {
         self.backfill(BackfillRequest::default()).await
     }
+}
+
+impl LinearConnector {
+    async fn backfill_since(
+        &self,
+        request: BackfillRequest,
+        since: Option<&str>,
+    ) -> DomainResult<ChangeBatch> {
+        let requested = if request.resource_types.is_empty() {
+            vec!["Team", "Project", "Issue"]
+        } else {
+            request.resource_types.iter().map(String::as_str).collect()
+        };
+        let mut events = Vec::new();
+
+        if requested.contains(&"Team") {
+            events.extend(
+                self.fetch_collection("teams", "id name key description updatedAt", "team", since)
+                    .await?,
+            );
+        }
+        if requested.contains(&"Project") {
+            events.extend(
+                self.fetch_collection(
+                    "projects",
+                    "id name description url status { name } updatedAt",
+                    "project",
+                    since,
+                )
+                .await?,
+            );
+        }
+        if requested.contains(&"Issue") {
+            events.extend(self.fetch_collection(
+                "issues",
+                "id identifier title description url priority priorityLabel state { id name type } team { id name key } assignee { id name email } project { id name } updatedAt archivedAt",
+                "issue",
+                since,
+            ).await?);
+        }
+
+        let next_cursor = events
+            .iter()
+            .filter_map(|event| event.source_version.as_deref())
+            .max()
+            .map(str::to_owned)
+            .or_else(|| since.map(str::to_owned))
+            .map(Cursor);
+
+        Ok(ChangeBatch {
+            events,
+            next_cursor,
+        })
+    }
+}
+
+fn graphql_string(value: &str) -> String {
+    serde_json::to_string(value).expect("a string is always valid JSON")
 }
 
 fn event_from_node(

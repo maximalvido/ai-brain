@@ -6,6 +6,13 @@ Status: Proposed
 
 Connectors hide source-specific APIs while exposing a consistent, replayable ingestion contract. Webhooks are preferred when available, but polling and backfills must remain first-class capabilities.
 
+The current Linear connector uses incremental polling. The `linear-sync`
+Compose service performs an initial backfill and stores the latest Linear
+`updatedAt` value in `connector_cursors`; later runs request only resources
+updated at or after that cursor, relying on idempotent observation writes to
+make the small overlap safe. The interval is configured with
+`LINEAR_SYNC_INTERVAL_SECONDS` and defaults to five minutes.
+
 ## Connector responsibilities
 
 A connector owns:

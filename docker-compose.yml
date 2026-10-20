@@ -30,6 +30,20 @@ services:
       - "${BRAIN_HTTP_BIND:-127.0.0.1}:${BRAIN_HTTP_PORT:-8787}:8787"
     restart: unless-stopped
 
+  linear-sync:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    command: ["sync-loop"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-ai_brain}:${POSTGRES_PASSWORD:-ai_brain_local}@postgres:5432/${POSTGRES_DB:-ai_brain}
+      LINEAR_API_KEY: ${LINEAR_API_KEY:-}
+      LINEAR_SYNC_INTERVAL_SECONDS: ${LINEAR_SYNC_INTERVAL_SECONDS:-300}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   mcp:
     build:
       context: .

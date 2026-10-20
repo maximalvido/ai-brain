@@ -76,14 +76,24 @@ it does not collide with a typical local PostgreSQL installation.
 docker compose up -d
 ```
 
-This starts PostgreSQL, the HTTP MCP server, and the stdio MCP service. The
-server runs the checked-in migrations when it connects to the database. Set
-`BRAIN_API_KEY` in `.env` before starting Compose.
+This starts PostgreSQL, the HTTP MCP server, the stdio MCP service, and the
+Linear polling worker. The server runs the checked-in migrations when it
+connects to the database. Set `BRAIN_API_KEY` and `LINEAR_API_KEY` in `.env`
+before starting Compose.
 
 To start only the database and HTTP endpoint:
 
 ```bash
 docker compose up -d postgres http
+```
+
+The `linear-sync` service performs an initial backfill, then polls Linear for
+resources updated at or after its last PostgreSQL cursor. It runs every five minutes
+by default; set `LINEAR_SYNC_INTERVAL_SECONDS` to change the interval. Run a
+single synchronization with:
+
+```bash
+cargo run -p brain-server -- sync
 ```
 
 ### 3. Build and test
@@ -212,6 +222,7 @@ machine. It is not the normal setup for employees using a shared server.
 | `POSTGRES_PASSWORD` | Compose database password | `ai_brain_local` |
 | `POSTGRES_PORT` | Host port mapped to PostgreSQL | `55432` |
 | `LINEAR_API_KEY` | Read-only Linear connector credential | unset |
+| `LINEAR_SYNC_INTERVAL_SECONDS` | Linear polling interval in seconds | `300` |
 | `BRAIN_API_KEY` | Installation key for MCP and HTTP access | unset |
 | `BRAIN_HTTP_ADDR` | HTTP bind address on the shared server | `127.0.0.1:8787` |
 | `BRAIN_HTTP_BIND` | Host interface for the Compose HTTP port | `127.0.0.1` |
