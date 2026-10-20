@@ -1,0 +1,16 @@
+[package]
+name = "connector-claude"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Claude organization-shared artifact export importer for AI Brain"
+
+[dependencies]
+async-trait.workspace = true
+brain-connectors = { path = "../brain-connectors" }
+brain-domain = { path = "../brain-domain" }
+serde_json.workspace = true
+zip.workspace = true
+
+[lints]
+workspace = true

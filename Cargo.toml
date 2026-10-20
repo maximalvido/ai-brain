@@ -8,6 +8,7 @@ members = [
     "crates/brain-storage-postgres",
     "crates/brain-ingestion",
     "crates/brain-compiler",
+    "crates/connector-claude",
     "apps/brain-server",
 ]
 
@@ -28,4 +29,5 @@ axum = "=0.8.9"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 sqlx = { version = "=0.8.6", default-features = false, features = ["postgres", "runtime-tokio-rustls"] }
 tokio = { version = "=1.53.3", features = ["rt-multi-thread", "time"] }
+zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 

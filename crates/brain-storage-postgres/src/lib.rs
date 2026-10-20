@@ -284,6 +284,7 @@ fn source_system_name(system: &SourceSystem) -> &str {
     match system {
         SourceSystem::Linear => "linear",
         SourceSystem::Slack => "slack",
+        SourceSystem::Claude => "claude",
         SourceSystem::Other(_) => "other",
     }
 }
@@ -292,6 +293,7 @@ fn source_system_from_name(name: String) -> DomainResult<SourceSystem> {
     match name.as_str() {
         "linear" => Ok(SourceSystem::Linear),
         "slack" => Ok(SourceSystem::Slack),
+        "claude" => Ok(SourceSystem::Claude),
         "other" => Ok(SourceSystem::Other(name)),
         _ => Err(DomainError(format!("unknown source system: {name}"))),
     }

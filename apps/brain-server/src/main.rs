@@ -11,6 +11,7 @@ use brain_domain::PrincipalId;
 use brain_ingestion::{IngestionService, observation_for};
 use brain_storage::{ResourceSearchQuery, ResourceSearchRepository};
 use brain_storage_postgres::{PgObservationRepository, PgResourceWriter, connect_and_migrate};
+use connector_claude::ClaudeArtifactConnector;
 use connector_linear::LinearConnector;
 use serde_json::{Value, json};
 use sqlx::{PgPool, Row};
@@ -25,12 +26,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match std::env::args().nth(1).as_deref() {
             Some("sync") => sync_linear().await,
             Some("sync-loop") => sync_linear_loop().await,
+            Some("import-claude-artifacts") => import_claude_artifacts().await,
             Some("validate-linear") => validate_linear().await,
             Some("search") => search_resources().await,
             Some("mcp") => mcp_server().await,
             Some("serve-http") => serve_http().await,
             _ => {
-                println!("Usage: brain-server <sync|sync-loop|validate-linear|search <text>|mcp|serve-http>");
+                println!("Usage: brain-server <sync|sync-loop|import-claude-artifacts <export.zip>|validate-linear|search <text>|mcp|serve-http>");
                 Ok(())
             }
         }
@@ -432,6 +434,59 @@ async fn sync_linear_loop() -> Result<(), Box<dyn std::error::Error>> {
         }
         tokio::time::sleep(std::time::Duration::from_secs(interval_seconds)).await;
     }
+}
+
+async fn import_claude_artifacts() -> Result<(), Box<dyn std::error::Error>> {
+    let path = std::env::args()
+        .nth(2)
+        .ok_or("Claude export path is required")?;
+    let connector = ClaudeArtifactConnector::from_path(path);
+    let health = connector.validate().await?;
+    if !health.authenticated {
+        return Err(health
+            .message
+            .unwrap_or_else(|| "Claude export is not available".into())
+            .into());
+    }
+
+    let database_url = std::env::var("DATABASE_URL")?;
+    let pool = connect_and_migrate(&database_url).await?;
+    sqlx::query(
+        "INSERT INTO connectors (id, source_system, display_name, config_json, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $5)
+         ON CONFLICT (id) DO NOTHING",
+    )
+    .bind("claude-artifacts")
+    .bind("claude")
+    .bind("Claude organization artifacts")
+    .bind("{}")
+    .bind(runtime_timestamp())
+    .execute(&pool)
+    .await?;
+
+    let repository = PgObservationRepository::new(pool.clone());
+    let ingestion = IngestionService::new(repository);
+    let resource_writer = PgResourceWriter::new(pool.clone());
+    let batch = connector.backfill(Default::default()).await?;
+    let total = batch.events.len();
+    let mut inserted = 0;
+    let mut duplicates = 0;
+
+    for event in batch.events {
+        let observation = observation_for(event);
+        match ingestion.ingest(observation.event.clone()).await? {
+            brain_storage::AppendResult::Inserted(_) => inserted += 1,
+            brain_storage::AppendResult::AlreadyExists(_) => duplicates += 1,
+        }
+        compile_and_write(&resource_writer, &observation).await?;
+    }
+
+    println!(
+        "Claude artifact import complete: total={} inserted={} duplicates={}",
+        total, inserted, duplicates
+    );
+    pool.close().await;
+    Ok(())
 }
 
 async fn load_connector_cursor(

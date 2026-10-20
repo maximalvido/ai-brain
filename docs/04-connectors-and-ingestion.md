@@ -13,6 +13,19 @@ updated at or after that cursor, relying on idempotent observation writes to
 make the small overlap safe. The interval is configured with
 `LINEAR_SYNC_INTERVAL_SECONDS` and defaults to five minutes.
 
+### Experimental: Claude organization artifacts
+
+Claude artifacts are currently imported from an administrator export with
+`brain-server import-claude-artifacts <export.zip>`. This is a founder-pilot
+feature, not a production connector or live Claude integration. The export
+schema is not guaranteed stable yet, so imports must be tested against a
+sanitized export before operational use.
+
+The importer fails closed: only records with explicit organization-wide
+visibility become observations. Unknown, private, project-scoped, and public
+records are not indexed. Artifact versions are retained as observations while
+the current artifact remains a single searchable resource.
+
 ## Connector responsibilities
 
 A connector owns:

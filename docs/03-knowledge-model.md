@@ -31,6 +31,11 @@ Observation
 
 A normalized representation of a source object, such as a Linear issue, Slack message, project, channel, team, or person.
 
+For Claude, an organization-shared artifact is represented as a resource and
+each exported artifact version remains a separate source observation. This
+experimental path preserves the artifact's evolution without exposing private
+or ambiguous visibility records to retrieval.
+
 ```text
 Resource
 - id

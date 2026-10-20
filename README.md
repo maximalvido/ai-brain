@@ -96,6 +96,21 @@ single synchronization with:
 cargo run -p brain-server -- sync
 ```
 
+#### Experimental: Claude organization artifacts
+
+This importer is experimental and intended for the founder pilot. It accepts
+an administrator export, not a live Claude API connection. Keep the archive
+outside version control and run:
+
+```bash
+cargo run -p brain-server -- import-claude-artifacts /secure/path/claude-export.zip
+```
+
+Only records with explicit organization-wide visibility are imported. Private,
+project-scoped, public, and unknown-visibility artifacts are skipped. The
+export schema is not yet guaranteed stable; validate the import against a
+sanitized export before relying on it operationally.
+
 ### 3. Build and test
 
 ```bash

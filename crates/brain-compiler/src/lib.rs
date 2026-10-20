@@ -48,6 +48,7 @@ fn resource_id(system: &SourceSystem, source_object_id: &str) -> String {
     let system = match system {
         SourceSystem::Linear => "linear",
         SourceSystem::Slack => "slack",
+        SourceSystem::Claude => "claude",
         SourceSystem::Other(name) => name,
     };
     format!("resource:{system}:{source_object_id}")

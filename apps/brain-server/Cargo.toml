@@ -14,6 +14,7 @@ brain-storage = { path = "../../crates/brain-storage" }
 brain-storage-postgres = { path = "../../crates/brain-storage-postgres" }
 brain-domain = { path = "../../crates/brain-domain" }
 connector-linear = { path = "../../crates/connector-linear" }
+connector-claude = { path = "../../crates/connector-claude" }
 dotenvy.workspace = true
 sqlx.workspace = true
 serde_json.workspace = true

@@ -27,6 +27,7 @@ pub struct SourceObjectId {
 pub enum SourceSystem {
     Linear,
     Slack,
+    Claude,
     Other(String),
 }
 
