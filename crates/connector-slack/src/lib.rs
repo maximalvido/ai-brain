@@ -206,8 +206,23 @@ impl Connector for SlackApiConnector {
             .unwrap_or_else(|| self.initial_oldest.clone());
         let conversations = self.list_conversations().await?;
         let mut events = Vec::new();
+        let mut failures = 0;
         for conversation in conversations {
-            events.extend(self.history(&conversation, &oldest).await?);
+            match self.history(&conversation, &oldest).await {
+                Ok(history) => events.extend(history),
+                Err(error) => {
+                    failures += 1;
+                    eprintln!(
+                        "Slack history sync failed; conversation_id={} conversation_name={} error={error}",
+                        conversation.id, conversation.name
+                    );
+                }
+            }
+        }
+        if failures > 0 {
+            eprintln!(
+                "Slack sync completed with partial failures; failed_conversations={failures}"
+            );
         }
         Ok(deduplicate_events(events))
     }

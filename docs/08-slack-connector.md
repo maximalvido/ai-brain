@@ -99,6 +99,9 @@ docker compose --profile slack up -d slack-sync
 - Webhook delivery covers public-channel message creation, edits, and
   deletions. Polling remains necessary for recovery when deliveries are
   delayed or missed.
+- If one conversation history request fails, the poller logs the conversation
+  and continues with the remaining channels. The run reports partial failure
+  in its worker logs instead of abandoning the entire synchronization.
 - Source permissions are not yet modeled per user.
 - Secret detection and redaction are not yet implemented.
 - The importer does not process Slack edits and deletions as delete events.
