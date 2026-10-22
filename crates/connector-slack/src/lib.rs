@@ -26,6 +26,9 @@ use zip::ZipArchive;
 const CONNECTOR_ID: &str = "slack-export";
 const API_CONNECTOR_ID: &str = "slack-api";
 const SLACK_API: &str = "https://slack.com/api";
+const RATE_LIMIT_ATTEMPTS: u32 = 5;
+const DEFAULT_RETRY_AFTER_SECONDS: u64 = 60;
+const MAX_RETRY_AFTER_SECONDS: u64 = 300;
 
 #[derive(Clone, Debug, Default)]
 struct Conversation {
@@ -75,14 +78,31 @@ impl SlackApiConnector {
     }
 
     async fn call(&self, method: &str, parameters: Value) -> DomainResult<Value> {
-        let response = self
-            .client
-            .post(format!("{SLACK_API}/{method}"))
-            .bearer_auth(&self.token)
-            .json(&parameters)
-            .send()
-            .await
-            .map_err(|error| DomainError(format!("Slack request failed: {error}")))?;
+        let mut attempt = 1;
+        let response = loop {
+            let response = self
+                .client
+                .post(format!("{SLACK_API}/{method}"))
+                .bearer_auth(&self.token)
+                .json(&parameters)
+                .send()
+                .await
+                .map_err(|error| DomainError(format!("Slack request failed: {error}")))?;
+            if response.status() != reqwest::StatusCode::TOO_MANY_REQUESTS
+                || attempt >= RATE_LIMIT_ATTEMPTS
+            {
+                break response;
+            }
+            let delay = retry_after_seconds(
+                response
+                    .headers()
+                    .get(reqwest::header::RETRY_AFTER)
+                    .and_then(|value| value.to_str().ok()),
+            );
+            eprintln!("Slack rate limited; method={method} attempt={attempt} retry_after={delay}s");
+            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+            attempt += 1;
+        };
         let status = response.status();
         let body: Value = response
             .json()
@@ -117,7 +137,12 @@ impl SlackApiConnector {
                 .get("channels")
                 .and_then(Value::as_array)
                 .ok_or_else(|| DomainError("Slack response omitted channels".into()))?;
-            conversations.extend(items.iter().filter_map(conversation_from_api));
+            conversations.extend(
+                items
+                    .iter()
+                    .filter(|item| is_readable_conversation(item))
+                    .filter_map(conversation_from_api),
+            );
             cursor = next_cursor(&body);
             if cursor.is_none() {
                 break;
@@ -219,12 +244,15 @@ impl Connector for SlackApiConnector {
                 }
             }
         }
+        let mut batch = deduplicate_events(events);
         if failures > 0 {
+            // Keep the window open so failed conversations are retried on the next run.
             eprintln!(
-                "Slack sync completed with partial failures; failed_conversations={failures}"
+                "Slack sync completed with partial failures; failed_conversations={failures} cursor_held={oldest}"
             );
+            batch.next_cursor = Some(Cursor(oldest));
         }
-        Ok(deduplicate_events(events))
+        Ok(batch)
     }
 
     async fn handle_webhook(&self, request: WebhookRequest) -> DomainResult<ChangeBatch> {
@@ -747,6 +775,22 @@ fn runtime_timestamp() -> String {
         .unwrap_or_else(|_| "0".into())
 }
 
+/// Bot tokens can only read conversations they belong to; `is_member` is absent
+/// for token types where membership does not apply.
+fn is_readable_conversation(value: &Value) -> bool {
+    value
+        .get("is_member")
+        .and_then(Value::as_bool)
+        .unwrap_or(true)
+}
+
+fn retry_after_seconds(header: Option<&str>) -> u64 {
+    header
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_RETRY_AFTER_SECONDS)
+        .clamp(1, MAX_RETRY_AFTER_SECONDS)
+}
+
 fn unix_timestamp() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -819,5 +863,28 @@ mod tests {
         .expect("deleted message");
         assert_eq!(deleted.operation, ObservationOperation::Delete);
         assert_eq!(deleted.source_object_id.value, "C1:10.000001");
+    }
+
+    #[test]
+    fn skips_conversations_without_membership() {
+        assert!(is_readable_conversation(
+            &json!({"id": "C1", "is_member": true})
+        ));
+        assert!(!is_readable_conversation(
+            &json!({"id": "C2", "is_member": false})
+        ));
+        assert!(is_readable_conversation(&json!({"id": "C3"})));
+    }
+
+    #[test]
+    fn bounds_retry_after_delay() {
+        assert_eq!(retry_after_seconds(Some("30")), 30);
+        assert_eq!(retry_after_seconds(Some("0")), 1);
+        assert_eq!(retry_after_seconds(Some("9999")), MAX_RETRY_AFTER_SECONDS);
+        assert_eq!(
+            retry_after_seconds(Some("soon")),
+            DEFAULT_RETRY_AFTER_SECONDS
+        );
+        assert_eq!(retry_after_seconds(None), DEFAULT_RETRY_AFTER_SECONDS);
     }
 }

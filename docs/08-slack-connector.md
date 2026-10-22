@@ -99,9 +99,15 @@ docker compose --profile slack up -d slack-sync
 - Webhook delivery covers public-channel message creation, edits, and
   deletions. Polling remains necessary for recovery when deliveries are
   delayed or missed.
+- The poller reads only conversations the token is a member of. Invite the
+  Slack app to each public channel that AI Brain should index with
+  `/invite @<app name>`; other channels are skipped.
+- Rate-limited Slack requests are retried after the `Retry-After` delay, up to
+  five attempts per request.
 - If one conversation history request fails, the poller logs the conversation
   and continues with the remaining channels. The run reports partial failure
-  in its worker logs instead of abandoning the entire synchronization.
+  in its worker logs and keeps the previous cursor, so the next run retries
+  the same window instead of skipping messages from the failed channels.
 - Source permissions are not yet modeled per user.
 - Secret detection and redaction are not yet implemented.
 - The importer does not process Slack edits and deletions as delete events.
